@@ -1,0 +1,7 @@
+# Ignore built package files — only committed after signing
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+*.db
+*.db.tar.gz
+*.files
+*.files.tar.gz
