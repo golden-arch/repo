@@ -1,0 +1,76 @@
+name: Build & publish pacman repo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Bootstrap Arch build environment
+        run: |
+          pacman -Syu --noconfirm base-devel git gnupg
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "default-key 15F2474EEEA7F452" >> ~/.gnupg/gpg.conf
+
+      - name: Checkout packages repo
+        uses: actions/checkout@v4
+        with:
+          repository: golden-arch/packages
+          path: packages
+
+      - name: Build all packages
+        run: |
+          useradd -m builder
+          cp -r packages /home/builder/packages
+          chown -R builder:builder /home/builder/packages
+          cd /home/builder/packages
+          for pkg in golden-arch-keyring golden-arch-theme golden-arch-defaults \
+                     golden-arch-branding golden-arch-hyprland-config; do
+            pushd "$pkg"
+            su builder -c "makepkg --noconfirm --syncdeps --skipinteg" || true
+            popd
+          done
+          find /home/builder/packages -name '*.pkg.tar.zst' -exec mv {} /tmp/pkgs/ \;
+        env:
+          PACKAGER: "Golden Arch <releases@golden-arch.org>"
+
+      - name: Sign packages
+        run: |
+          mkdir -p /tmp/pkgs
+          for pkg in /tmp/pkgs/*.pkg.tar.zst; do
+            gpg --batch --yes --detach-sign "$pkg"
+          done
+
+      - name: Checkout repo branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Update pacman database
+        run: |
+          mkdir -p gh-pages/x86_64
+          cp /tmp/pkgs/*.pkg.tar.zst gh-pages/x86_64/ 2>/dev/null || true
+          cp /tmp/pkgs/*.pkg.tar.zst.sig gh-pages/x86_64/ 2>/dev/null || true
+          cd gh-pages/x86_64
+          repo-add --sign golden-arch.db.tar.zst *.pkg.tar.zst || true
+
+      - name: Push to GitHub Pages
+        run: |
+          cd gh-pages
+          git config user.name  "Golden Arch Bot"
+          git config user.email "releases@golden-arch.org"
+          git add -A
+          git commit -m "ci: rebuild repo $(date -u +%Y-%m-%dT%H:%M:%SZ)" || true
+          git push
