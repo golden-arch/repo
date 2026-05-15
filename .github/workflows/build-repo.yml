@@ -46,6 +46,7 @@ jobs:
           for pkg in */; do
             pkg="${pkg%/}"
             [ -f "$pkg/PKGBUILD" ] || continue
+            [ -f "$pkg/.skip-ci" ] && echo "==> Skipping $pkg (marked .skip-ci)" && continue
             echo "==> Building $pkg"
             pushd "$pkg"
             su builder -c "PACKAGER='Golden Arch <releases@golden-arch.org>' makepkg --noconfirm --nodeps --skipinteg" && \
