@@ -14,7 +14,11 @@ jobs:
     steps:
       - name: Bootstrap Arch build environment
         run: |
-          pacman -Syu --noconfirm base-devel git gnupg
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            base-devel git gnupg rust go \
+            python python-build python-installer python-wheel python-setuptools \
+            nftables curl libnotify gtk3 nss libsecret libx11 libxcb alsa-lib
 
       - name: Import signing key
         env:
@@ -32,37 +36,42 @@ jobs:
       - name: Build all packages
         run: |
           useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          mkdir -p /tmp/pkgs
           cp -r packages /home/builder/packages
-          chown -R builder:builder /home/builder/packages
+          chown -R builder:builder /home/builder/packages /tmp/pkgs
           cd /home/builder/packages
-          for pkg in golden-arch-keyring golden-arch-theme golden-arch-defaults \
-                     golden-arch-branding golden-arch-hyprland-config; do
+          for pkg in */; do
+            pkg="${pkg%/}"
+            [ -f "$pkg/PKGBUILD" ] || continue
+            echo "==> Building $pkg"
             pushd "$pkg"
-            su builder -c "makepkg --noconfirm --syncdeps --skipinteg" || true
+            su builder -c "PACKAGER='Golden Arch <releases@golden-arch.org>' makepkg --noconfirm --nodeps --skipinteg" && \
+              find . -name '*.pkg.tar.zst' -exec cp {} /tmp/pkgs/ \; || \
+              echo "WARNING: $pkg failed, continuing"
             popd
           done
-          find /home/builder/packages -name '*.pkg.tar.zst' -exec mv {} /tmp/pkgs/ \;
-        env:
-          PACKAGER: "Golden Arch <releases@golden-arch.org>"
 
       - name: Sign packages
         run: |
-          mkdir -p /tmp/pkgs
           for pkg in /tmp/pkgs/*.pkg.tar.zst; do
+            [ -f "$pkg" ] || continue
             gpg --batch --yes --detach-sign "$pkg"
           done
 
       - name: Checkout repo branch
         uses: actions/checkout@v4
         with:
+          repository: golden-arch/repo
           ref: gh-pages
           path: gh-pages
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update pacman database
         run: |
           mkdir -p gh-pages/x86_64
-          cp /tmp/pkgs/*.pkg.tar.zst gh-pages/x86_64/ 2>/dev/null || true
-          cp /tmp/pkgs/*.pkg.tar.zst.sig gh-pages/x86_64/ 2>/dev/null || true
+          find /tmp/pkgs -name '*.pkg.tar.zst' -exec cp {} gh-pages/x86_64/ \;
+          find /tmp/pkgs -name '*.pkg.tar.zst.sig' -exec cp {} gh-pages/x86_64/ \;
           cd gh-pages/x86_64
           repo-add --sign golden-arch.db.tar.zst *.pkg.tar.zst || true
 
