@@ -21,7 +21,10 @@ jobs:
             base-devel git gnupg rust go github-cli \
             python python-build python-installer python-wheel python-setuptools \
             nftables curl libnotify gtk3 nss libsecret libx11 libxcb alsa-lib \
-            libnetfilter_queue libmnl libnfnetlink
+            libnetfilter_queue libmnl libnfnetlink \
+            cmake ninja extra-cmake-modules \
+            qt6-base qt6-svg qt6-declarative qt6-tools qt6-translations \
+            kpmcore yaml-cpp libpwquality libglvnd
 
       - name: Import signing key
         env:
